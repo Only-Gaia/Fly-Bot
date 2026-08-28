@@ -1,46 +1,9 @@
 import asyncio
-import json
-import logging
-import os
-from pathlib import Path
 
 import discord
 from discord.ext import commands
 
 from utils.storage import Storage
-
-# ---------------------------------------------------------------------------
-# CONFIGURAZIONE / AVVIO BOT
-# ---------------------------------------------------------------------------
-
-logging.basicConfig(level=logging.INFO)
-log = logging.getLogger("bot")
-
-CONFIG_PATH = Path(__file__).parent / "config.json"
-
-CONFIG = {}
-if CONFIG_PATH.exists():
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        CONFIG = json.load(f)
-
-TOKEN = os.environ.get("DISCORD_TOKEN") or CONFIG.get("token")
-PREFIX = os.environ.get("PREFIX") or CONFIG.get("prefix", "?")
-
-if not TOKEN:
-    raise SystemExit(
-        "Token mancante. Imposta la variabile d'ambiente DISCORD_TOKEN "
-        "(su Railway) oppure crea config.json con il token (in locale)."
-    )
-
-intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
-
-bot = commands.Bot(command_prefix=PREFIX, intents=intents)
-
-# ---------------------------------------------------------------------------
-# LOGICA TICKET
-# ---------------------------------------------------------------------------
 
 ticket_db = Storage("tickets.json")  # gid -> {"category": id, "log_channel": id}
 open_tickets_db = Storage("open_tickets.json")  # gid -> channel_id -> {"owner": id, "claimed_by": id|None, "tipo": str}
@@ -70,6 +33,7 @@ class TicketOpenView(discord.ui.View):
         settings = get_settings(guild.id)
         category = guild.get_channel(settings["category"]) if settings["category"] else None
 
+        # Evita ticket duplicati dello stesso tipo aperti dallo stesso utente
         existing = open_tickets_db.get(guild.id, default={})
         for chan_id, info in existing.items():
             if info["owner"] == interaction.user.id and info["tipo"] == tipo:
@@ -166,7 +130,7 @@ class TicketManageView(discord.ui.View):
             return m.author == interaction.user and m.channel == interaction.channel and m.mentions
 
         try:
-            msg = await bot.wait_for("message", timeout=30, check=check)
+            msg = await interaction.client.wait_for("message", timeout=30, check=check)
         except Exception:
             return
         member = msg.mentions[0]
@@ -199,7 +163,7 @@ class TicketManageView(discord.ui.View):
             )
 
         try:
-            await bot.wait_for("reaction_add", timeout=30, check=check)
+            await interaction.client.wait_for("reaction_add", timeout=30, check=check)
         except Exception:
             return await interaction.channel.send("⌛ Chiusura annullata, nessuna conferma ricevuta.")
 
@@ -211,46 +175,36 @@ class TicketManageView(discord.ui.View):
         await interaction.channel.delete(reason="Ticket chiuso con conferma reazione")
 
 
-@bot.event
-async def on_ready():
-    log.info(f"Bot connesso come {bot.user} (ID: {bot.user.id})")
-    # Registra le view persistenti (i pulsanti funzionano anche dopo il riavvio del bot)
-    bot.add_view(TicketOpenView())
-    bot.add_view(TicketManageView())
+class Tickets(commands.Cog):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+        # Registra le view persistenti (i pulsanti funzionano anche dopo il riavvio del bot)
+        bot.add_view(TicketOpenView())
+        bot.add_view(TicketManageView())
+
+    @commands.command(name="pannelloticket")
+    @commands.has_permissions(manage_guild=True)
+    async def pannelloticket(self, ctx, categoria: discord.CategoryChannel = None):
+        """Invia il pannello ticket con i pulsanti configurati."""
+        settings = get_settings(ctx.guild.id)
+        if categoria:
+            settings["category"] = categoria.id
+            ticket_db.set(ctx.guild.id, settings)
+
+        embed = discord.Embed(
+            title="🎫 Centro Assistenza",
+            description=(
+                "Apri un ticket selezionando una delle categorie qui sotto:\n\n"
+                "🤝 **Partnership** — proponi una collaborazione\n"
+                "🎤 **Provino Staff** — candidati per lo staff\n"
+                "🚨 **Segnala Utente** — segnala un comportamento scorretto\n"
+                "🎉 **Riscatta Giveaway** — riscatta la tua vincita\n"
+                "❓ **Aiuto Generale** — richiedi supporto"
+            ),
+            color=discord.Color.blurple(),
+        )
+        await ctx.send(embed=embed, view=TicketOpenView())
 
 
-@bot.command(name="pannelloticket")
-@commands.has_permissions(manage_guild=True)
-async def pannelloticket(ctx, categoria: discord.CategoryChannel = None):
-    """Invia il pannello ticket con i pulsanti configurati."""
-    settings = get_settings(ctx.guild.id)
-    if categoria:
-        settings["category"] = categoria.id
-        ticket_db.set(ctx.guild.id, settings)
-
-    embed = discord.Embed(
-        title="🎫 Centro Assistenza",
-        description=(
-            "Apri un ticket selezionando una delle categorie qui sotto:\n\n"
-            "🤝 **Partnership** — proponi una collaborazione\n"
-            "🎤 **Provino Staff** — candidati per lo staff\n"
-            "🚨 **Segnala Utente** — segnala un comportamento scorretto\n"
-            "🎉 **Riscatta Giveaway** — riscatta la tua vincita\n"
-            "❓ **Aiuto Generale** — richiedi supporto"
-        ),
-        color=discord.Color.blurple(),
-    )
-    await ctx.send(embed=embed, view=TicketOpenView())
-
-
-# ---------------------------------------------------------------------------
-# COMANDO CHE ATTIVA IL BOT
-# ---------------------------------------------------------------------------
-
-async def main():
-    async with bot:
-        await bot.start(TOKEN)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+async def setup(bot: commands.Bot):
+    await bot.add_cog(Tickets(bot))
