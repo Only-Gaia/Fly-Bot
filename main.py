@@ -29,8 +29,39 @@ if not TOKEN:
 
 CONFIG["token"] = TOKEN
 CONFIG["prefix"] = PREFIX
+
+# Intents: abilita quelli di cui hai bisogno (message_content è spesso necessario
+# per i comandi testuali con prefisso)
+intents = discord.Intents.default()
+intents.message_content = True
+
+bot = commands.Bot(command_prefix=PREFIX, intents=intents)
+
+
+@bot.event
+async def on_ready():
+    log.info(f"Bot connesso come {bot.user} (ID: {bot.user.id})")
+
+
+async def load_extensions():
+    """Carica automaticamente tutte le cogs nella cartella cogs/, se esiste."""
+    cogs_path = Path(__file__).parent / "cogs"
+    if not cogs_path.exists():
+        return
+    for file in cogs_path.glob("*.py"):
+        if file.stem == "__init__":
+            continue
+        extension = f"cogs.{file.stem}"
+        try:
+            await bot.load_extension(extension)
+            log.info(f"Estensione caricata: {extension}")
+        except Exception as e:
+            log.error(f"Errore caricando {extension}: {e}")
+
+
 async def main():
     async with bot:
+        await load_extensions()
         await bot.start(TOKEN)
 
 
