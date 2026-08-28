@@ -1,6 +1,28 @@
+# Configurazione con token segreto - NON caricare mai
 config.json
+
+# Dati persistenti del bot (warn, economia, ticket, inviti...)
 data/
+
+# File Python compilati
 __pycache__/
-*.pyc
-.venv/
+*.py[cod]
+*$py.class
+
+# Ambienti virtuali
 venv/
+.venv/
+env/
+ENV/
+
+# Log
+*.log
+
+# File di sistema
+.DS_Store
+Thumbs.db
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
