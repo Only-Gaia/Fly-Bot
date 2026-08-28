@@ -29,3 +29,10 @@ if not TOKEN:
 
 CONFIG["token"] = TOKEN
 CONFIG["prefix"] = PREFIX
+async def main():
+    async with bot:
+        await bot.start(TOKEN)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
